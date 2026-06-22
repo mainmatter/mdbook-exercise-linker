@@ -51,11 +51,18 @@ fn process_book_item(item: &mut BookItem, renderer: &str, root_url: &str) {
             }
 
             let exercise_path = source_path.strip_suffix(".md").unwrap();
-            let link_section = format!(
-                "\n## Exercise\n\nThe exercise for this section is located in [`{exercise_path}`]({})\n",
-                format!("{}/{}", root_url, exercise_path)
+            let link = format!(
+                "\nThe exercise for this section is located in [`{exercise_path}`]({}/{exercise_path})\n",
+                root_url
             );
-            chapter.content.push_str(&link_section);
+
+            // If the chapter already has an `## Exercise` section, insert the
+            // link into it instead of adding a second, duplicate heading.
+            if let Some(idx) = exercise_heading_end(&chapter.content) {
+                chapter.content.insert_str(idx, &link);
+            } else {
+                chapter.content.push_str(&format!("\n## Exercise\n{link}"));
+            }
 
             if renderer == "pandoc" {
                 chapter.content.push_str("`\\newpage`{=latex}\n");
@@ -64,4 +71,17 @@ fn process_book_item(item: &mut BookItem, renderer: &str, root_url: &str) {
         BookItem::Separator => {}
         BookItem::PartTitle(_) => {}
     }
+}
+
+/// Returns the byte offset just after an existing `## Exercise` heading line,
+/// or `None` if the chapter has no such heading.
+fn exercise_heading_end(content: &str) -> Option<usize> {
+    let mut offset = 0;
+    for line in content.split_inclusive('\n') {
+        if line.trim_end() == "## Exercise" {
+            return Some(offset + line.len());
+        }
+        offset += line.len();
+    }
+    None
 }
