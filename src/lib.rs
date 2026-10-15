@@ -2,11 +2,20 @@ use anyhow::{Context, Error};
 use mdbook_preprocessor::book::{Book, BookItem};
 use mdbook_preprocessor::{Preprocessor, PreprocessorContext};
 
+/// File stem of a chapter's overview page, which has no exercise of its own.
+const CHAPTER_INTRO_STEM: &str = "00_README";
+
 pub struct ExerciseLinker;
 
 impl ExerciseLinker {
     pub fn new() -> ExerciseLinker {
         ExerciseLinker
+    }
+}
+
+impl Default for ExerciseLinker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -43,10 +52,19 @@ fn process_book_item(item: &mut BookItem, renderer: &str, root_url: &str) {
             let Some(source_path) = &chapter.source_path else {
                 return;
             };
+
+            // Chapter intros have no exercise of their own
+            if source_path
+                .file_stem()
+                .is_some_and(|stem| stem == CHAPTER_INTRO_STEM)
+            {
+                return;
+            }
+
             let source_path = source_path.display().to_string();
 
             // Ignore non-exercise chapters
-            if !source_path.chars().take(2).all(|c| c.is_digit(10)) {
+            if !source_path.chars().take(2).all(|c| c.is_ascii_digit()) {
                 return;
             }
 
@@ -84,4 +102,44 @@ fn exercise_heading_end(content: &str) -> Option<usize> {
         offset += line.len();
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mdbook_preprocessor::book::Chapter;
+    use std::path::PathBuf;
+
+    const ROOT_URL: &str = "https://example.com/exercises";
+
+    fn process(source_path: &str) -> String {
+        let mut item = BookItem::Chapter(Chapter {
+            content: "Body.".to_string(),
+            source_path: Some(PathBuf::from(source_path)),
+            ..Default::default()
+        });
+        process_book_item(&mut item, "html", ROOT_URL);
+        match item {
+            BookItem::Chapter(chapter) => chapter.content,
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn links_the_exercise_for_a_section() {
+        let content = process("01_foundations/01_unsafe.md");
+        assert!(content.contains(&format!("{ROOT_URL}/01_foundations/01_unsafe")));
+    }
+
+    #[test]
+    fn skips_chapter_intros_which_have_no_exercise() {
+        let content = process("01_foundations/00_README.md");
+        assert_eq!(content, "Body.");
+    }
+
+    #[test]
+    fn skips_non_exercise_chapters() {
+        let content = process("SUMMARY.md");
+        assert_eq!(content, "Body.");
+    }
 }
